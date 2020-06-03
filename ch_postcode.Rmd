@@ -1,0 +1,111 @@
+---
+title: "Care Home Postcodes"
+author: "David Henderson"
+date: "03/06/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Intro
+
+## Packages
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(rvest)
+library(janitor)
+library(lubridate)
+library(phsmethods) #remotes::install_github("Health-SocialCare-Scotland/phsmethods")
+```
+
+
+# Scrape
+
+Downloaded 2020-06-03
+
+```{r}
+c_homes <- read_html("https://www.careinspectorate.com/careservicelist.php") %>% 
+  html_nodes("table") %>% 
+  html_table() %>% 
+  as.data.frame
+```
+
+
+```{r}
+unique(c_homes$Service.Type)
+```
+
+
+
+```{r}
+c_homes %>% 
+  clean_names %>% 
+  #Keep only adult types
+  filter(service_type %in% c("Care Home Service", 
+                             "Care homes for people with learning disabilities",
+                             "Care homes for older people", 
+                             "Care homes for people with mental health problems",
+                             "Care homes for people with physical and sensory impairment",
+                             "Care homes for people with drug and alcohol misuse problems",
+                             "Care Homes for Older People"
+                             )) %>% 
+  #20 homes have "inactive" status - drop them
+  filter(service_status == "Active") %>% 
+  #6 homes with no address/postcode - manually add with info from Google
+  mutate(
+    address_1 = case_when(
+      service_name == "Allandale House" ~ "11 Balmoor Terrace",
+      service_name == "Bellfield Home" ~ "1 Dee Street",
+      service_name == "Burnbrae" ~ "Burnbrae Road",
+      service_name == "Extended Pesonal Care Limited - Respite" ~ "Calico House",
+      service_name == "Macintosh Centre (Care Home)" ~ "Annie's Brae",
+      service_name == "Mackinnon Centre" ~ "491 Brook St",
+      TRUE ~ address_1),
+    address_2 == case_when(
+      service_name == "Extended Pesonal Care Limited - Respite" ~ "2 Whitefield Lodge",
+      service_name == "Mackinnon Centre" ~ "Broughty Ferry",
+      TRUE ~ address_2),
+    address_3 = case_when(
+      service_name == "Extended Pesonal Care Limited - Respite" ~ "Service St.",
+      TRUE ~ address_3),
+    postcode = case_when(
+      service_name == "Allandale House" ~ "AB42 1EQ",
+      service_name == "Bellfield Home" ~ "AB31 5XH",
+      service_name == "Burnbrae" ~ "FK1 5SD",
+      service_name == "Extended Personal Care Limited - Respite" ~ "G66 7JW",
+      service_name == "Mackintosh Centre (Care Home)" ~ "PH41 4RN",
+      service_name == "Mackinnon Centre" ~ "DD5 2DZ",
+      TRUE ~ postcode
+    )) %>%
+  #Duplicated service type due to case error. Replace to lower case version
+  mutate(service_type = str_replace(service_type, "Care Homes for Older People",
+                                    "Care homes for older people"),
+         #Coerce to date format
+         date_of_registration = dmy(date_of_registration),
+         #Use postcode function from phsmethods to check postcode validity 
+         postcode = postcode(postcode)) %>% 
+  #keep only these variables...
+  select(service_name, service_type, date_of_registration, address_1, address_2, address_3,
+         address_4, city, postcode, provider_id, provider) -> ch_df
+```
+
+
+```{r}
+ch_df %>% 
+  count(service_type) %>% 
+  arrange(-n) %>% 
+  add_row(service_type = "Total", n = sum(.$n))
+```
+
+
+```{r}
+ch_df %>% 
+  count(provider) %>% 
+  arrange(-n)
+```
+
+
+
